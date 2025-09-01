@@ -1,91 +1,73 @@
-import subprocess
-import time
-
-from appium import webdriver
-from appium.options.android import UiAutomator2Options
 from appium.webdriver.common.appiumby import AppiumBy
 
 from behave import given, when, then
 
-# Global variables to track server and emulator status
-sdk_path = r"D:\Android"
+from config import CONFIG
+from elements import NORMAL_XPATHS
+from parameterized_elements import PARAMETERIZED_XPATHS
 
-
-@given('I start the Appium server')
-def step_given_i_start_appium_server(context, port=4723):
-    command = f'start cmd /k appium --use-plugins=relaxed-caps -p {port}'
-    context.appium_process = subprocess.Popen(command, shell=True)
-    time.sleep(5)
-
-
-@given('I launch the emulator "{emulator_name}"')
-def step_given_i_launch_emulator(context, emulator_name):
-    # Launch the emulator with the specified name
-    command = f'start cmd /k "{sdk_path}\\emulator\\emulator.exe" -avd {emulator_name} -no-snapshot-load -gpu host'
-    context.emulator_process = subprocess.Popen(command, shell=True)
-    time.sleep(30)
-    wait_for_emulator_to_load()
-
-
-def wait_for_emulator_to_load():
-    print("Waiting for the emulator to boot...")
-    while True:
-        result = subprocess.run(['adb', 'shell', 'getprop', 'sys.boot_completed'], capture_output=True, text=True)
-        if result.stdout.strip() == '1':
-            print("Boot completed. Checking for home screen...")
-            break
-        time.sleep(5)
-
-    while True:
-        # Check if the launcher is running
-        result = subprocess.run(['adb', 'shell', 'pm', 'list', 'packages'], capture_output=True, text=True)
-        if 'com.google.android.apps.nexuslauncher' in result.stdout:
-            print("Home screen is displayed.")
-            break
-        time.sleep(5)  # Check every 5 seconds
-
-
-@when('I set the capabilities')
-def step_when_i_set_the_capabilities(context):
-    context.desired_caps = {
-        'platformName': 'Android',  # Change to 'iOS' for iOS devices
-        'platformVersion': '13.0',  # Change to your device's version
-        'deviceName': 'Mobile_33',  # Change to your device's name
-        'automationName': 'UiAutomator2'  # Use 'XCUITest' for iOS
-    }
-    context.capabilities_options = UiAutomator2Options().load_capabilities(context.desired_caps)
-
-
-@when('I start the Appium Driver')
-def step_when_i_start_the_appium_driver(context):
-    context.driver = webdriver.Remote(command_executor='http://localhost:4723', options=context.capabilities_options)
-    context.driver.implicitly_wait(20)
-
-
-@then('I open the application "{appname}"')
-def step_then_i_open_the_application(context, appname):
-    context.driver.find_element(by=AppiumBy.XPATH,
-                                value=f'//android.widget.TextView[@content-desc="{appname}"]').click()
-
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 @then('I click on the "{element}"')
 def step_then_i_click_on_the(context, element):
-    context.driver.find_element(by=AppiumBy.XPATH,
-                                value=f'//android.widget.ImageButton[@content-desc="{element}"]').click()
+    """
+    Clicks on the specified element using its content description.
 
+    This step locates an image button by its content description and performs a click action.
+    The element is identified using a parameterized XPath from PARAMETERIZED_XPATHS.
+
+    Args:
+        context: The Behave context object containing the driver.
+        element: The content description of the element to click (e.g., "Options for Discover").
+    """
+    context.driver.find_element(by=AppiumBy.XPATH,
+                                value=PARAMETERIZED_XPATHS['image_button_by_content_desc'].format(element=element)).click()
 
 @then('"{option}" the discovered feed')
 def step_then_the_discovered_feed(context, option):
-    context.driver.find_element(by=AppiumBy.XPATH,
-                                value=f'//android.widget.TextView[@resource-id="com.android.chrome:id/menu_item_text" '
-                                      f'and @text="{option}"]').click()
+    """
+    Toggles the discovered feed option in the Chrome menu.
+
+    This step attempts to find and click the specified option ("Turn on" or "Turn off").
+    If the option is not found, it clicks the opposite option, then opens the "Options for Discover" menu,
+    and finally clicks the desired option. The menu closes automatically after the click.
+
+    Args:
+        context: The Behave context object containing the driver.
+        option: The option to select ("Turn on" or "Turn off").
+    """
+    try:
+        option_element = context.driver.find_element(by=AppiumBy.XPATH,
+                                                     value=PARAMETERIZED_XPATHS['discovered_feed_option'].format(option=option))
+        option_element.click()
+    except:
+        opposite = "Turn on" if option == "Turn off" else "Turn off"
+        opposite_element = context.driver.find_element(by=AppiumBy.XPATH,
+                                                       value=PARAMETERIZED_XPATHS['discovered_feed_option'].format(option=opposite))
+        opposite_element.click()
+        step_then_i_click_on_the(context, "Options for Discover")
+        option_element = context.driver.find_element(by=AppiumBy.XPATH,
+                                                     value=PARAMETERIZED_XPATHS['discovered_feed_option'].format(option=option))
+        option_element.click()
 
 
-@then('Close the session')
-def step_then_close_the_session(context):
-    subprocess.run(['taskkill', '/F', '/IM', 'node.exe'])
-    subprocess.run(['taskkill', '/F', '/IM', 'cmd.exe'])
-    #subprocess.run(['taskkill', '/F', '/IM', 'emulator.exe'])
-    #subprocess.run(['taskkill', '/F', '/IM', 'netsimd.exe'])
-    #subprocess.run(['taskkill', '/F', '/IM', 'crashpad_handler.exe'])
-    subprocess.run(['taskkill', '/F', '/IM', 'qemu-system-x86_64.exe'])
+@then('the discovered feed should be "{expected_state}"')
+def step_then_verify_discovered_feed_state(context, expected_state):
+    """
+    Verifies that the discovered feed is in the expected state.
+
+    This step waits up to 2 seconds for an element with the expected state text to be present.
+    If the element is not found within the timeout, the test fails with an assertion error.
+
+    Args:
+        context: The Behave context object containing the driver.
+        expected_state: The expected state of the discovered feed ("Turn on" or "Turn off").
+    """
+    try:
+        WebDriverWait(context.driver, 2).until(
+            EC.presence_of_element_located((AppiumBy.XPATH, PARAMETERIZED_XPATHS['discovered_feed_option'].format(option=expected_state)))
+        )
+    except:
+        assert False, f"Expected discovered feed state to be '{expected_state}', but not found within 2 seconds"
+
